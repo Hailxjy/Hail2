@@ -30,7 +30,7 @@ class MyClient(discord.Client):
         self.is_syncing = False
     
     @staticmethod
-    def deepl_translate(text):
+    def deepl_translate(text, target_lang='EN'):
         headers = {
             'Authorization': 'DeepL-Auth-Key bd5e8c7e-636e-0f13-0070-98903392f96b:fx',
             'Content-Type': 'application/json',
@@ -191,42 +191,13 @@ class MyClient(discord.Client):
                 print(f"===Synced {og_channel.name} ({i+1}/{len(association)})")
         if debug:
             print(f'===Finished Sync ({i+1}/{len(association)})')
-            
-    async def single_sync(self, og_channel, debug=False):
-        log = json.load(open('log.json', 'r'))
-        association = self.association
-        og_cnls = str(og_channel.id)
-        async for message in og_channel.history(limit=1):
-            latest = message.id
-        if latest <= log[og_cnls]:
-            if debug:
-                print(f"===Already Synced {og_channel.name} ({i+1}/{len(association)})")
-            return
-        dupe_channel = self.get_channel(association[og_cnls])
-        last_known = await og_channel.fetch_message(log[og_cnls])
-        
-        og_id = message.channel.id
-        if debug:
-            print(f"===Syncing {og_channel.name} ({i+1}/{len(association)})")
-        async for message in og_channel.history(limit=None, after=last_known, oldest_first=True):
-            msgs = [message.author.name.split("#0")[0], message.content, [[m.filename, m.url] for m in message. attachments], message.jump_url, message.id]
-            await self.sync_channel(og_id, msgs, dupe_channel)
-        if debug:
-            print(f"===Synced {og_channel.name} ({i+1}/{len(association)})")
 
-    @tasks.loop(seconds=600)
+    @tasks.loop(seconds=60)
     async def global_sync_task(self):
         if self.is_syncing:
             return
         self.is_syncing = True
         await self.global_sync(debug=False)
-        self.is_syncing = False
-        
-    async def single_sync_task(self, og_channel):
-        if self.is_syncing:
-            return
-        self.is_syncing = True
-        await self.single_sync(og_channel, debug=False)
         self.is_syncing = False
         
     async def on_ready(self):
@@ -314,8 +285,12 @@ class MyClient(discord.Client):
         return await self.update_log(cidx, midx, save_update=False)
     
     async def on_message(self, message):
-        if str(message.channel.id) in self.association:
-            await self.single_sync_task(message.channel)
+        if message.author != self.user and message.channel.id != 1133427797742862349:
+            translated = self.deepl_translate(message.content, target_lang='JA')
+            romanji = self.romajify(translated)
+            
+            await message.channel.send(f"```{romanji}```")
+            await message.channel.send(translated)
             
         if message.content == '.clone':
             association = {}
