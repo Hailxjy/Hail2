@@ -8,6 +8,7 @@ import asyncio
 import time
 import random
 from threading import Thread
+from discord.ext import tasks
 
 token = open('token.txt').read().strip()
       
@@ -25,54 +26,8 @@ class MyClient(discord.Client):
         self.log = {}
         self.loaded_log = False
         self.run_flask = os.name == "posix"
-
-        if self.run_flask:
-            from flask import Flask
-            
-            site = Flask("")
-
-            @site.route("/")    
-            def main_page():
-                return 'xd'
-            
-            def run(site):
-                site.run(host="0.0.0.0", port=8080)
-
-            def ku(url):
-                url = f'https://{url}' if not url.startswith('https') else url
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
-                    'Accept': '*/*',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Content-Type': 'application/json',
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                    'X-SesId': '1687055417783',
-                    'X-DevId': '8994da85-c5a0-48d7-9fcc-3f5b9d19d724R',
-                    'Origin': 'https://reqbin.com',
-                    'Connection': 'keep-alive',
-                    'Sec-Fetch-Dest': 'empty',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-site',
-                }
-                
-                json_data = {
-                    'id': '0',
-                    'name': '',
-                    'errors': '',
-                    'json': '{"method":"GET","url":"' + url + '","apiNode":"US","contentType":"","headers":"","errors":"","curlCmd":"","codeCmd":"","jsonCmd":"","xmlCmd":"","lang":"","auth":{"auth":"noAuth","bearerToken":"","basicUsername":"","basicPassword":"","customHeader":"","encrypted":""},"compare":false,"idnUrl":"' + url + '"}',
-                    'sessionId': 1687055417783,
-                    'deviceId': '8994da85-c5a0-48d7-9fcc-3f5b9d19d724R',
-                }
-                while True:
-                    requests.post('https://apius.reqbin.com/api/v1/requests', headers=headers, json=json_data)
-                    time.sleep(300)
-            
-            server = Thread(target=run, args=(site,))
-            server.start()
-            k = Thread(target=ku, args=("hail2.jyealc.repl.co", ))
-            k.start()
+        self.association = json.load(open('association.json', 'r', encoding='utf-8-sig'))
+        self.is_syncing = False
     
     @staticmethod
     def deepl_translate(text):
@@ -158,7 +113,6 @@ class MyClient(discord.Client):
         text = self.unescape_html(text)
         return text
     
-    
     async def sync_channel(self, og_id, msgs, dupe_channel):
         if not await self.should_send(og_id, msgs[4]):
             return
@@ -166,12 +120,12 @@ class MyClient(discord.Client):
             return
         buffer = []
         msg = f"# {msgs[0]}:\n"
-        msg += f"{msgs[3]}\n"
+        msg += f"{msgs[3]}"
         if msgs[1]:
             romanji = self.romajify(msgs[1])
             translated = self.deepl_translate(msgs[1])
             romanji = romanji.replace('```', '')    
-            msg += f"\n```{romanji}```\n{translated}"
+            msg += f"\n```{romanji}```{translated}"
         if msgs[2]:
             msg += '\n'
             msg += '\n'.join([att[1] for att in msgs[2]])
@@ -208,32 +162,124 @@ class MyClient(discord.Client):
         await self.update_log(og_id, msgs[4])
         await asyncio.sleep(random.uniform(0.5, 0.75))
 
-    async def on_ready(self):
-        print('Logged on as', self.user)
-        association = json.load(open('association.json', 'r', encoding='utf-8-sig'))
+    async def global_sync(self, debug=False):
+        association = self.association
         log = json.load(open('log.json', 'r'))        
         
         for i, og_cnls in enumerate(association.keys()):
             if og_cnls not in log:
-                print(f"===Skipped {og_cnls} ({i+1}/{len(association)})")
+                if debug:
+                    print(f"===Skipped {og_cnls} ({i+1}/{len(association)})")
                 continue
             og_channel = self.get_channel(int(og_cnls))
             async for message in og_channel.history(limit=1):
                 latest = message.id
             if latest <= log[og_cnls]:
-                print(f"===Already Synced {og_channel.name} ({i+1}/{len(association)})")
+                if debug:
+                    print(f"===Already Synced {og_channel.name} ({i+1}/{len(association)})")
                 continue
             dupe_channel = self.get_channel(association[og_cnls])
             last_known = await og_channel.fetch_message(log[og_cnls])
             
             og_id = message.channel.id
-            print(f"===Syncing {og_channel.name} ({i+1}/{len(association)})")
+            if debug:
+                print(f"===Syncing {og_channel.name} ({i+1}/{len(association)})")
             async for message in og_channel.history(limit=None, after=last_known, oldest_first=True):
                 msgs = [message.author.name.split("#0")[0], message.content, [[m.filename, m.url] for m in message. attachments], message.jump_url, message.id]
                 await self.sync_channel(og_id, msgs, dupe_channel)
-            print(f"===Synced {og_channel.name} ({i+1}/{len(association)})")
-        print(f'===Finished Sync ({i+1}/{len(association)})')
+            if debug:
+                print(f"===Synced {og_channel.name} ({i+1}/{len(association)})")
+        if debug:
+            print(f'===Finished Sync ({i+1}/{len(association)})')
+            
+    async def single_sync(self, og_channel, debug=False):
+        log = json.load(open('log.json', 'r'))
+        association = self.association
+        og_cnls = str(og_channel.id)
+        async for message in og_channel.history(limit=1):
+            latest = message.id
+        if latest <= log[og_cnls]:
+            if debug:
+                print(f"===Already Synced {og_channel.name} ({i+1}/{len(association)})")
+            return
+        dupe_channel = self.get_channel(association[og_cnls])
+        last_known = await og_channel.fetch_message(log[og_cnls])
         
+        og_id = message.channel.id
+        if debug:
+            print(f"===Syncing {og_channel.name} ({i+1}/{len(association)})")
+        async for message in og_channel.history(limit=None, after=last_known, oldest_first=True):
+            msgs = [message.author.name.split("#0")[0], message.content, [[m.filename, m.url] for m in message. attachments], message.jump_url, message.id]
+            await self.sync_channel(og_id, msgs, dupe_channel)
+        if debug:
+            print(f"===Synced {og_channel.name} ({i+1}/{len(association)})")
+
+    @tasks.loop(seconds=600)
+    async def global_sync_task(self):
+        if self.is_syncing:
+            return
+        self.is_syncing = True
+        await self.global_sync(debug=False)
+        self.is_syncing = False
+        
+    async def single_sync_task(self, og_channel):
+        if self.is_syncing:
+            return
+        self.is_syncing = True
+        await self.single_sync(og_channel, debug=False)
+        self.is_syncing = False
+        
+    async def on_ready(self):
+        print('Logged on as', self.user)
+        self.global_sync_task.start()
+
+        if self.run_flask:
+            from flask import Flask
+            
+            site = Flask("")
+
+            @site.route("/")    
+            def main_page():
+                return 'xd'
+            
+            def run(site):
+                site.run(host="0.0.0.0", port=8080)
+
+            def ku(url):
+                url = f'https://{url}' if not url.startswith('https') else url
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0',
+                    'Accept': '*/*',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Content-Type': 'application/json',
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                    'X-SesId': '1687055417783',
+                    'X-DevId': '8994da85-c5a0-48d7-9fcc-3f5b9d19d724R',
+                    'Origin': 'https://reqbin.com',
+                    'Connection': 'keep-alive',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-site',
+                }
+                
+                json_data = {
+                    'id': '0',
+                    'name': '',
+                    'errors': '',
+                    'json': '{"method":"GET","url":"' + url + '","apiNode":"US","contentType":"","headers":"","errors":"","curlCmd":"","codeCmd":"","jsonCmd":"","xmlCmd":"","lang":"","auth":{"auth":"noAuth","bearerToken":"","basicUsername":"","basicPassword":"","customHeader":"","encrypted":""},"compare":false,"idnUrl":"' + url + '"}',
+                    'sessionId': 1687055417783,
+                    'deviceId': '8994da85-c5a0-48d7-9fcc-3f5b9d19d724R',
+                }
+                while True:
+                    requests.post('https://apius.reqbin.com/api/v1/requests', headers=headers, json=json_data)
+                    time.sleep(300)
+            
+            server = Thread(target=run, args=(site,))
+            server.start()
+            k = Thread(target=ku, args=("hail2.jyealc.repl.co", ))
+            k.start()
         
     async def update_log(self, cidx, midx, save_update=True):
         cidx = str(cidx)
@@ -268,6 +314,9 @@ class MyClient(discord.Client):
         return await self.update_log(cidx, midx, save_update=False)
     
     async def on_message(self, message):
+        if str(message.channel.id) in self.association:
+            await self.single_sync_task(message.channel)
+            
         if message.content == '.clone':
             association = {}
             og = 1129344555616051212
@@ -306,7 +355,7 @@ class MyClient(discord.Client):
             if not os.path.exists('backup'):
                 os.mkdir('backup')
                 
-            association = json.load(open('association.json', 'r', encoding='utf-8-sig'))
+            association = self.association
             for i, channels in enumerate(association):
                 if os.path.exists(f'backup/{channels}.json'):
                     continue
@@ -325,7 +374,7 @@ class MyClient(discord.Client):
                     json.dump(msgs, f, ensure_ascii=False)
 
         elif message.content == '.mirror':
-            association = json.load(open('association.json', 'r', encoding='utf-8-sig'))
+            association = self.association
             for files in glob.glob('backup/*.json'):
                 og_id = files.split('/')[1].split('.')[0] 
                 ignore = [1129344555616051217]
@@ -337,53 +386,7 @@ class MyClient(discord.Client):
 
                 data.reverse()
                 for msgs in data:
-                    if not await self.should_send(og_id, msgs[4]):
-                        continue
-                    if not msgs[1] and not msgs[2]:
-                        continue
-                    buffer = []
-                    msg = f"# {msgs[0]}:\n"
-                    msg += f"{msgs[3]}\n"
-                    if msgs[1]:
-                        romanji = self.romajify(msgs[1])
-                        translated = self.deepl_translate(msgs[1])
-                        romanji = romanji.replace('```', '')    
-                        msg += f"\n```{romanji}```\n{translated}"
-                    if msgs[2]:
-                        msg += '\n'
-                        msg += '\n'.join([att[1] for att in msgs[2]])
-                    pattern = r"<.*?#(\d+)>"
-                    replacement = r"https://discord.com/channels/1129344555616051212/\1"
-                    msg = re.sub(pattern, replacement, msg)
-                    if len(msg) < 1900:
-                        await dupe_channel.send(msg)
-                    else:
-                        buffer.append('')
-                        seperated = msg.split('\n')
-                        
-                        for i, line in enumerate(seperated):
-                            if len(line) > 1900:
-                                seperated.insert(i+1, '')
-                                further = seperated[i][:1900].split(' ')
-                                remainder = seperated[i][1900:]
-                                seperated[i] = ' '.join(further[:-1])
-                                seperated[i+1] = ' '.join(further[-1]) + ' ' + remainder
-                                
-                        for line in seperated:
-                            if len(buffer[-1]) + len(line) < 1900:
-                                buffer[-1] += line + '\n'
-                            else:
-                                if buffer[-1].count('```') % 2 == 1:
-                                    buffer[-1] += '```'
-                                    buffer.append(f'```{line}\n')
-                                else:
-                                    buffer.append(f'{line}\n')
-    
-                        for msg in buffer:
-                            await dupe_channel.send(msg)
-
-                    await self.update_log(og_id, msgs[4])
-                    await asyncio.sleep(random.uniform(0.5, 0.75))
+                    await self.sync_channel(og_id, msgs, dupe_channel)
 
         elif message.content == '.purge':
             async for msg in message.channel.history(limit=None):
