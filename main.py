@@ -23,11 +23,15 @@ class MyClient(discord.Client):
             "&apos;": "'",
         }
         self.html_entities_pattern = "|".join(map(re.escape, self.html_entities.keys()))
-        self.log = {}
-        self.loaded_log = False
+        if not os.path.exists('log.json'):
+            with open('log.json', 'w') as f:
+                json.dump({}, f)
+            self.log = {}
+        else:
+            self.log = json.load(open('log.json', 'r'))
         self.run_flask = os.name == "posix"
-        self.association = json.load(open('association.json', 'r', encoding='utf-8-sig'))
-        self.is_syncing = False
+        self.association = json.load(open('association.json', 'r'))
+        self.sync_state = {}
     
     @staticmethod
     def deepl_translate(text, target_lang='EN'):
@@ -95,6 +99,16 @@ class MyClient(discord.Client):
             time.sleep(10)
             return self.translate(text)
     
+    def set_sync(self, channel, state):
+        channel = str(channel)
+        self.sync_state[channel] = state
+    
+    def get_sync(self, channel):
+        channel = str(channel)
+        if channel not in self.sync_state:
+            self.sync_state[channel] = False
+        return self.sync_state[channel]
+    
     def unescape_html(self, s):
         return re.sub(self.html_entities_pattern, lambda m: self.html_entities[m.group()], s)
 
@@ -113,7 +127,7 @@ class MyClient(discord.Client):
         text = self.unescape_html(text)
         return text
     
-    async def sync_channel(self, og_id, msgs, dupe_channel):
+    async def sync_message(self, og_id, msgs, dupe_channel):
         if not await self.should_send(og_id, msgs[4]):
             return
         if not msgs[1] and not msgs[2]:
@@ -164,42 +178,69 @@ class MyClient(discord.Client):
 
     async def global_sync(self, debug=False):
         association = self.association
-        log = json.load(open('log.json', 'r'))        
         
         for i, og_cnls in enumerate(association.keys()):
-            if og_cnls not in log:
+            if og_cnls not in self.log or self.get_sync(og_cnls):
                 if debug:
                     print(f"===Skipped {og_cnls} ({i+1}/{len(association)})")
                 continue
             og_channel = self.get_channel(int(og_cnls))
             async for message in og_channel.history(limit=1):
                 latest = message.id
-            if latest <= log[og_cnls]:
+            if latest <= self.log[og_cnls]:
                 if debug:
                     print(f"===Already Synced {og_channel.name} ({i+1}/{len(association)})")
                 continue
             dupe_channel = self.get_channel(association[og_cnls])
-            last_known = await og_channel.fetch_message(log[og_cnls])
+            last_known = await og_channel.fetch_message(self.log[og_cnls])
             
             og_id = message.channel.id
+            self.set_sync(og_id, True)
             if debug:
                 print(f"===Syncing {og_channel.name} ({i+1}/{len(association)})")
             async for message in og_channel.history(limit=None, after=last_known, oldest_first=True):
                 msgs = [message.author.name.split("#0")[0], message.content, [[m.filename, m.url] for m in message. attachments], message.jump_url, message.id]
-                await self.sync_channel(og_id, msgs, dupe_channel)
+                await self.sync_message(og_id, msgs, dupe_channel)
+            self.set_sync(og_id, False)
             if debug:
                 print(f"===Synced {og_channel.name} ({i+1}/{len(association)})")
         if debug:
             print(f'===Finished Sync ({i+1}/{len(association)})')
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(seconds=600)
     async def global_sync_task(self):
-        if self.is_syncing:
-            return
-        self.is_syncing = True
         await self.global_sync(debug=False)
-        self.is_syncing = False
         
+    async def single_sync(self, channel, debug=False):
+        association = self.association
+        og_cnls = str(channel)
+        
+        if og_cnls not in self.log or self.get_sync(og_cnls):
+            if debug:
+                print(f"===Skipped Single {og_cnls}")
+        og_channel = self.get_channel(int(og_cnls))
+        async for message in og_channel.history(limit=1):
+            latest = message.id
+        if latest <= self.log[og_cnls]:
+            if debug:
+                print(f"===Already Synced Single {og_channel.name}")
+        dupe_channel = self.get_channel(association[og_cnls])
+        last_known = await og_channel.fetch_message(self.log[og_cnls])
+        
+        og_id = message.channel.id
+        self.set_sync(og_id, True)
+        if debug:
+            print(f"===Syncing Single {og_channel.name}")
+        async for message in og_channel.history(limit=None, after=last_known, oldest_first=True):
+            msgs = [message.author.name.split("#0")[0], message.content, [[m.filename, m.url] for m in message. attachments], message.jump_url, message.id]
+            await self.sync_message(og_id, msgs, dupe_channel)
+        self.set_sync(og_id, False)
+        if debug:
+            print(f"===Synced Single {og_channel.name}")
+    
+    async def single_sync_task(self, channel):  
+        await self.single_sync(channel, debug=False)
+    
     async def on_ready(self):
         print('Logged on as', self.user)
         self.global_sync_task.start()
@@ -254,15 +295,6 @@ class MyClient(discord.Client):
         
     async def update_log(self, cidx, midx, save_update=True):
         cidx = str(cidx)
-        if not self.loaded_log:
-            if not os.path.exists('log.json'):
-                with open('log.json', 'w') as f:
-                    json.dump({}, f)
-                self.log = {}
-            else:
-                self.log = json.load(open('log.json', 'r', encoding='utf-8-sig'))
-            self.loaded_log = True
-            
         if cidx not in self.log:
             if save_update:
                 self.log[cidx] = midx
@@ -285,14 +317,17 @@ class MyClient(discord.Client):
         return await self.update_log(cidx, midx, save_update=False)
     
     async def on_message(self, message):
-        if message.author != self.user and message.channel.id != 1133427797742862349:
+        if str(message.channel.id) in self.association:
+            await self.single_sync(message.channel)
+        
+        elif message.content[0] not in ['.', '!'] and message.channel.id != 1133427797742862349 and message.guild.id == 1133427797025632307 and message.author.id != self.user.id:
             translated = self.deepl_translate(message.content, target_lang='JA')
             romanji = self.romajify(translated)
             
             await message.channel.send(f"```{romanji}```")
             await message.channel.send(translated)
-            
-        if message.content == '.clone':
+        
+        elif message.content == '.clone':
             association = {}
             og = 1129344555616051212
             dupe = 1133427797025632307
@@ -361,7 +396,7 @@ class MyClient(discord.Client):
 
                 data.reverse()
                 for msgs in data:
-                    await self.sync_channel(og_id, msgs, dupe_channel)
+                    await self.sync_message(og_id, msgs, dupe_channel)
 
         elif message.content == '.purge':
             async for msg in message.channel.history(limit=None):
