@@ -9,90 +9,9 @@ import time
 import random
 from threading import Thread
 from discord.ext import tasks
-import io
-from bs4 import BeautifulSoup
 
 token = open('token.txt').read().strip()
-
-class fText:
-    def __init__(self, text=""):
-        self.text = text
-        self.prefix = ""
-        self.suffix = ""
-        self.untext = ""
-
-        self.styles = {"bold": "1", "underline": "4"}
-
-        self.colors = {
-            "gray": "30",
-            "red": "31",
-            "green": "32",
-            "yellow": "33",
-            "blue": "34",
-            "pink": "35",
-            "cyan": "36",
-            "white": "37",
-        }
-
-        self.backgrounds = {
-            "darkblue": "40",
-            "orange": "41",
-            "blue": "42",
-            "purple": "43",
-            "gray": "44",
-            "indigo": "45",
-            "lightgray": "46",
-            "white": "47",
-        }
-
-    def translate(self, style=None, color=None, background=None, keep=True):
-        if style == None and color == None and background == None and keep:
-            return ""
-        elif style == None and color == None and background == None and not keep:
-            return "\u001b[0m"
-
-        if style in self.styles:
-            style = self.styles[style]
-        else:
-            style = "0"
-        if color in self.colors:
-            color = self.colors[color]
-        else:
-            color = None
-        if background in self.backgrounds:
-            background = self.backgrounds[background]
-        else:
-            background = None
-
-        stylee = f"\u001b[{style}"
-        if color:
-            stylee += f";{color}"
-        if background:
-            stylee += f";{background}"
-
-        return f"{stylee}m"
-    
-    def add(self, text, style=None, color=None, background=None):
-        self.text += f"{self.translate(style, color, background)}{text}"
-        self.untext += text
-
-    def color(self, color):
-        self.text += self.translate(color=color)
-
-    def pre(self, text):
-        self.prefix += text
-
-    def suf(self, text):
-        self.suffix += text
-
-    def __str__(self):
-        self.final = f"```ansi\n{self.text}```" if self.text else ""
-        return f"{self.prefix}\n{self.final}\n{self.suffix}"
-
-    def to_file(self):
-        return io.StringIO(f"{self.prefix}\n{self.untext}\n{self.suffix}")
-
-
+      
 class MyClient(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -210,56 +129,6 @@ class MyClient(discord.Client):
         text = self.unescape_html(text)
         return text
     
-    @staticmethod
-    def ganaify(text):
-        hiragana = {'kk': 'っk', 'pp': 'っp', 'tt': 'っt', 'ss': 'っs', 'gg': 'っg', 'é': 'e', 'ū': 'uu', 'ō': 'oう', 'n': 'ん', 'tsu': 'つ', 'dzu': 'づ', 'dji': 'ぢ', 'kya': 'きゃ', 'kyu': 'きゅ', 'kyo': 'きょ', 'んya': 'にゃ', 'んyu': 'にゅ', 'んyo': 'にょ', 'sha': 'しゃ', 'shi': 'し', 'shu': 'しゅ', 'sho': 'しょ', 'chi': 'ち', 'cha': 'ちゃ', 'chu': 'ちゅ', 'cho': 'ち ょ', 'hya': 'ひゃ', 'hyu': 'ひゅ', 'hyo': 'ひょ', 'mya': 'みゃ', 'myu': 'みゅ', 'myo': 'みょ', 'rya': 'りゃ', 'ryu': 'りゅ', 'ryo': 'りょ', 'gya': 'ぎゃ', 'gyu': 'ぎゅ', 'gyo': 'ぎょ', 'bya': 'びゃ', 'byu': 'びゅ', 'byo': 'びょ', 'pya': 'ぴゃ', 'pyu': 'ぴゅ', 'pyo': 'ぴょ', 'ja': 'じゃ', 'ju': 'じゅ', 'jo': 'じょ', 'ba': 'ば', 'da': 'だ', 'ga': 'が', 'ha': 'は', 'ka': 'か', 'ma': 'ま', 'んa': 'な', 'pa': 'ぱ', 'ra': 'ら', 'sa': 'さ', 'ta': 'た', 'wa': 'わ', 'ya': 'や', 'za': 'ざ', 'a': 'あ', 'be': 'べ', 'de': 'で', 'ge': 'げ', 'he': 'へ', 'ke': 'け', 'me': 'め', 'んe': 'ね', 'pe': 'ぺ', 're': 'れ', 'se': 'せ', 'te': 'て', 'we': 'ゑ', 'ze': 'ぜ', 'e': 'え', 'bi': 'び', 'gi': 'ぎ', 'hi': 'ひ', 'ki': 'き', 'mi': 'み', 'んi': 'に', 'pi': 'ぴ', 'ri': 'り', 'wi': 'ゐ', 'ji': 'じ', 'i': 'い', 'bo': 'ぼ', 'do': 'ど', 'go': 'ご', 'ho': 'ほ', 'ko': 'こ', 'mo': 'も', 'んo': 'の', 'po': 'ぽ', 'ro': 'ろ', 'so': 'そ', 'to': 'と', 'wo': 'を', 'yo': 'よ', 'zo': 'ぞ', 'o': 'お', 'bu': 'ぶ', 'gu': 'ぐ', 'fu': 'ふ', 'ku': 'く', 'mu': 'む', 'んu': 'ぬ', 'pu': 'ぷ', 'ru': 'る', 'su': 'す', 'yu': 'ゆ', 'zu': 'ず', 'u': 'う', 'v': 'ゔ'}
-        car = text.lower()
-        for k, v in hiragana.items():
-            car = car.replace(k, v)
-        return car
-    
-    @staticmethod
-    def define_jap(text):
-        params = {
-            'q': text,
-            'r': 'htr',
-        }
-
-        response = requests.get('https://ichi.moe/cl/qr/', params=params)
-            
-        soup = BeautifulSoup(response.text, 'html.parser')
-        divs = soup.find_all('div', class_="gloss")
-            
-        filtered = []
-
-        for i in range(len(divs)):
-            if divs[i].find('em').text not in filtered:
-                filtered.append(divs[i].find('em').text)
-                filtered.append(divs[i])
-                
-        filtered = filtered[1::2][:-1]
-        
-        defs = {
-            'deep': {}
-        }
-
-        for div in filtered:    
-            em = div.find('em')
-            if em is None:
-                continue
-            dt = div.find('dt')
-            if dt is None:
-                continue
-            mean = div.find('li')
-            if mean is None:
-                continue
-            
-            defs['deep'][re.sub(r'\d\.', '', dt.text).strip()] = [em.text.strip(), mean.text.strip()]
-
-        ichiran = soup.find('div', id='div-ichiran-result').find('em')
-        defs['ichiran'] = ''.join([span.text for span in ichiran.find_all('span', recursive=False) if 'hidden' not in span['class']])
-        return defs
-        
     async def sync_message(self, og_id, msgs, dupe_channel):
         if not await self.should_send(og_id, msgs[4]):
             return
@@ -269,8 +138,7 @@ class MyClient(discord.Client):
         msg = f"# {msgs[0]}:\n"
         msg += f"{msgs[3]}"
         if msgs[1]:
-            msgs[1] = msgs[1].replace('```', '')
-            romanji = self.romajify(msgs[1])
+            romanji = self.romajify(msgs[1].replace('```', ''))
             translated = self.deepl_translate(msgs[1])
             msg += f"\n```{romanji}```{translated}"
         if msgs[2]:
@@ -444,59 +312,17 @@ class MyClient(discord.Client):
     async def should_send(self, cidx, midx):
         return await self.update_log(cidx, midx, save_update=False)
     
-    @staticmethod
-    def split_message(msg, seperator='\n', fmode = False, length = 1950):
-        buffer = ['']
-        msg = msg.split(seperator)
-        for line in msg:
-            if len(buffer[-1] + line + seperator) < length:
-                buffer[-1] += line + seperator
-            else:
-                buffer.append(f'{line}{seperator}')
-        
-        if len(buffer) == 1:
-            return buffer
-        elif fmode:
-            for i, b in enumerate(buffer):
-                if b % 2 == 0:
-                    buffer[i] += '```'
-                else:
-                    buffer[i] = '```ansi\n' + buffer[i]
-                    
-        return buffer
-    
-    def format_defs(self, translated, defs):
-        ftext = fText()
-        ftext.add(translated + '\n' + defs['ichiran'] + '\n\n')    
-        for phrase in defs['deep']:
-            ftext.add(phrase + '\n', color='pink')
-            ftext.add(defs['deep'][phrase][0] + '\n', color='cyan')
-            ftext.add(defs['deep'][phrase][1], color='yellow')
-            ftext.add('\n\n')
-        
-        splitted = self.split_message(str(ftext), fmode=True, seperator='\n\n')
-        return splitted
-        
     async def on_message(self, message):
         if str(message.channel.id) in self.association:
             await self.single_sync(message.channel)
         
         elif message.content[0] not in ['.', '!'] and message.channel.id != 1133427797742862349 and message.guild.id == self.dupe_id and message.author.id != self.user.id:
-            gana = self.ganaify(message.content)
-            defs_gana = self.define_jap(gana)
             translated = self.deepl_translate(message.content, target_lang='JA')
-            defs = self.define_jap(translated)
+            romanji = self.romajify(translated)
             
-            splitted = self.format_defs(translated, defs)
-            splitted_gana = self.format_defs(translated, defs_gana)
-            
-            for msg in splitted_gana:
-                await message.channel.send(msg)
-            for msg in splitted:
-                await message.channel.send(msg)
-            await message.channel.send(gana)
+            await message.channel.send(f"```{romanji}```")
             await message.channel.send(translated)
-            
+        
         elif message.content == '.clone':
             association = {}
             og = self.og_id
