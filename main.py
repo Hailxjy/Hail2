@@ -192,13 +192,13 @@ class MyClient(discord.Client):
                     print(f"===Already Synced {og_channel.name} ({i+1}/{len(association)})")
                 continue
             dupe_channel = self.get_channel(association[og_cnls])
-            last_known = await og_channel.fetch_message(self.log[og_cnls])
             
             og_id = message.channel.id
             self.set_sync(og_id, True)
             if debug:
                 print(f"===Syncing {og_channel.name} ({i+1}/{len(association)})")
-            async for message in og_channel.history(limit=None, after=last_known, oldest_first=True):
+            async for message in og_channel.history(limit=None, after=discord.Object(id=self.log[og_cnls]), oldest_first=True):
+                
                 msgs = [message.author.name.split("#0")[0], message.content, [[m.filename, m.url] for m in message. attachments], message.jump_url, message.id]
                 await self.sync_message(og_id, msgs, dupe_channel)
             self.set_sync(og_id, False)
@@ -225,13 +225,12 @@ class MyClient(discord.Client):
             if debug:
                 print(f"===Already Synced Single {og_channel.name}")
         dupe_channel = self.get_channel(association[og_cnls])
-        last_known = await og_channel.fetch_message(self.log[og_cnls])
         
         og_id = message.channel.id
         self.set_sync(og_id, True)
         if debug:
             print(f"===Syncing Single {og_channel.name}")
-        async for message in og_channel.history(limit=None, after=last_known, oldest_first=True):
+        async for message in og_channel.history(limit=None, after=discord.Object(id=self.log[og_cnls]), oldest_first=True):
             msgs = [message.author.name.split("#0")[0], message.content, [[m.filename, m.url] for m in message. attachments], message.jump_url, message.id]
             await self.sync_message(og_id, msgs, dupe_channel)
         self.set_sync(og_id, False)
