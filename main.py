@@ -136,9 +136,8 @@ class MyClient(discord.Client):
         msg = f"# {msgs[0]}:\n"
         msg += f"{msgs[3]}"
         if msgs[1]:
-            romanji = self.romajify(msgs[1])
+            romanji = self.romajify(msgs[1].replace('```', ''))
             translated = self.deepl_translate(msgs[1])
-            romanji = romanji.replace('```', '')    
             msg += f"\n```{romanji}```{translated}"
         if msgs[2]:
             msg += '\n'
