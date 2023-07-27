@@ -44,7 +44,7 @@ class MyClient(discord.Client):
             'text': [
                 text,
             ],
-            'target_lang': 'EN',
+            'target_lang': target_lang,
         }
 
         response = requests.post('https://api-free.deepl.com/v2/translate', headers=headers, json=json_data)
@@ -213,7 +213,7 @@ class MyClient(discord.Client):
         
     async def single_sync(self, channel, debug=False):
         association = self.association
-        og_cnls = str(channel)
+        og_cnls = str(channel.id)
         
         if og_cnls not in self.log or self.get_sync(og_cnls):
             if debug:
