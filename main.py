@@ -32,6 +32,8 @@ class MyClient(discord.Client):
         self.run_flask = os.name == "posix"
         self.association = json.load(open('association.json', 'r'))
         self.sync_state = {}
+        self.dupe_id = 1133427797025632307
+        self.og_id = 1129344555616051212
     
     @staticmethod
     def deepl_translate(text, target_lang='EN'):
@@ -143,7 +145,7 @@ class MyClient(discord.Client):
             msg += '\n'
             msg += '\n'.join([att[1] for att in msgs[2]])
         pattern = r"<.*?#(\d+)>"
-        replacement = r"https://discord.com/channels/1129344555616051212/\1"
+        replacement = f"https://discord.com/channels/{self.og_id}" + r"/\1"
         msg = re.sub(pattern, replacement, msg)
         if len(msg) < 1900:
             await dupe_channel.send(msg)
@@ -163,11 +165,7 @@ class MyClient(discord.Client):
                 if len(buffer[-1]) + len(line) < 1900:
                     buffer[-1] += line + '\n'
                 else:
-                    if buffer[-1].count('```') % 2 == 1:
-                        buffer[-1] += '```'
-                        buffer.append(f'```{line}\n')
-                    else:
-                        buffer.append(f'{line}\n')
+                    buffer.append(f'{line}\n')
 
             for msg in buffer:
                 await dupe_channel.send(msg)
@@ -318,7 +316,7 @@ class MyClient(discord.Client):
         if str(message.channel.id) in self.association:
             await self.single_sync(message.channel)
         
-        elif message.content[0] not in ['.', '!'] and message.channel.id != 1133427797742862349 and message.guild.id == 1133427797025632307 and message.author.id != self.user.id:
+        elif message.content[0] not in ['.', '!'] and message.channel.id != 1133427797742862349 and message.guild.id == self.dupe_id and message.author.id != self.user.id:
             translated = self.deepl_translate(message.content, target_lang='JA')
             romanji = self.romajify(translated)
             
@@ -327,8 +325,8 @@ class MyClient(discord.Client):
         
         elif message.content == '.clone':
             association = {}
-            og = 1129344555616051212
-            dupe = 1133427797025632307
+            og = self.og_id
+            dupe = self.dupe_id
             
             og = self.get_guild(og)
             dupe = self.get_guild(dupe)
@@ -348,7 +346,7 @@ class MyClient(discord.Client):
                 json.dump(association, f)
                 
         elif message.content == '.reset':
-            dupe = 1133427797025632307
+            dupe = self.og_id
             dupe = self.get_guild(dupe)
             
             for category in dupe.categories:
